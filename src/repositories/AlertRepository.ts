@@ -4,23 +4,23 @@ import { AlertEntity } from '../entities/Alert';
 import { AlertSeverity, AlertStatus, VisibilityType } from '../models/enums';
 
 export interface IAlertRepository {
-  findByVisibility(organizationId: string, teamId?: string, userId?: string): Promise<Alert[]>;
-  findActiveAlerts(): Promise<Alert[]>;
-  findExpiredAlerts(): Promise<Alert[]>;
-  findByCreator(createdBy: string): Promise<Alert[]>;
-  findWithFilters(filters: AlertFilters): Promise<Alert[]>;
+  findByVisibility(organizationId: string, teamId?: string, userId?: string): Promise<AlertEntity[]>;
+  findActiveAlerts(): Promise<AlertEntity[]>;
+  findExpiredAlerts(): Promise<AlertEntity[]>;
+  findByCreator(createdBy: string): Promise<AlertEntity[]>;
+  findWithFilters(filters: AlertFilters): Promise<AlertEntity[]>;
   archiveAlert(id: string): Promise<boolean>;
   markAsExpired(id: string): Promise<boolean>;
-  findAlertsForUser(userId: string, teamId: string, organizationId: string): Promise<Alert[]>;
+  findAlertsForUser(userId: string, teamId: string, organizationId: string): Promise<AlertEntity[]>;
 }
 
-export class AlertRepository extends BaseRepository<Alert> implements IAlertRepository {
+export class AlertRepository extends BaseRepository<AlertEntity> implements IAlertRepository {
   protected getTableName(): string {
     return 'alerts';
   }
 
-  protected mapResultsToEntities(rows: any[]): Alert[] {
-    return rows.map(row => ({
+  protected mapResultsToEntities(rows: any[]): AlertEntity[] {
+    const alerts: Alert[] = rows.map(row => ({
       id: row.id,
       title: row.title,
       message: row.message,
@@ -38,9 +38,10 @@ export class AlertRepository extends BaseRepository<Alert> implements IAlertRepo
       createdAt: new Date(row.created_at),
       status: row.status as AlertStatus
     }));
+    return alerts.map(alert => AlertEntity.fromData(alert));
   }
 
-  protected mapEntityToRow(entity: Alert): Record<string, any> {
+  protected mapEntityToRow(entity: AlertEntity): Record<string, any> {
     return {
       id: entity.id,
       title: entity.title,
@@ -59,7 +60,7 @@ export class AlertRepository extends BaseRepository<Alert> implements IAlertRepo
     };
   }
 
-  async create(entity: Alert): Promise<Alert> {
+  async create(entity: AlertEntity): Promise<AlertEntity> {
     this.validateEntity(entity);
     
     const row = this.mapEntityToRow(entity);
@@ -85,7 +86,7 @@ export class AlertRepository extends BaseRepository<Alert> implements IAlertRepo
     }
   }
 
-  async findById(id: string): Promise<Alert | null> {
+  async findById(id: string): Promise<AlertEntity | null> {
     try {
       const sql = `SELECT * FROM ${this.getTableName()} WHERE id = $1`;
       const result = await this.executeQuery(sql, [id]);
@@ -96,7 +97,7 @@ export class AlertRepository extends BaseRepository<Alert> implements IAlertRepo
     }
   }
 
-  async update(id: string, updates: Partial<Alert>): Promise<Alert> {
+  async update(id: string, updates: Partial<AlertEntity>): Promise<AlertEntity> {
     this.validateEntity(updates);
     
     const setClauses: string[] = [];
@@ -166,7 +167,7 @@ export class AlertRepository extends BaseRepository<Alert> implements IAlertRepo
     }
   }
 
-  async findByVisibility(organizationId: string, teamId?: string, userId?: string): Promise<Alert[]> {
+  async findByVisibility(organizationId: string, teamId?: string, userId?: string): Promise<AlertEntity[]> {
     try {
       let sql = `
         SELECT * FROM ${this.getTableName()} 
@@ -198,7 +199,7 @@ export class AlertRepository extends BaseRepository<Alert> implements IAlertRepo
     }
   }
 
-  async findActiveAlerts(): Promise<Alert[]> {
+  async findActiveAlerts(): Promise<AlertEntity[]> {
     try {
       const sql = `
         SELECT * FROM ${this.getTableName()} 
@@ -212,7 +213,7 @@ export class AlertRepository extends BaseRepository<Alert> implements IAlertRepo
     }
   }
 
-  async findExpiredAlerts(): Promise<Alert[]> {
+  async findExpiredAlerts(): Promise<AlertEntity[]> {
     try {
       const sql = `
         SELECT * FROM ${this.getTableName()} 
@@ -226,7 +227,7 @@ export class AlertRepository extends BaseRepository<Alert> implements IAlertRepo
     }
   }
 
-  async findByCreator(createdBy: string): Promise<Alert[]> {
+  async findByCreator(createdBy: string): Promise<AlertEntity[]> {
     try {
       const sql = `
         SELECT * FROM ${this.getTableName()} 
@@ -240,7 +241,7 @@ export class AlertRepository extends BaseRepository<Alert> implements IAlertRepo
     }
   }
 
-  async findWithFilters(filters: AlertFilters): Promise<Alert[]> {
+  async findWithFilters(filters: AlertFilters): Promise<AlertEntity[]> {
     try {
       const conditions: string[] = [];
       const params: any[] = [];
@@ -323,7 +324,7 @@ export class AlertRepository extends BaseRepository<Alert> implements IAlertRepo
     }
   }
 
-  async findAlertsForUser(userId: string, teamId: string, organizationId: string): Promise<Alert[]> {
+  async findAlertsForUser(userId: string, teamId: string, organizationId: string): Promise<AlertEntity[]> {
     try {
       const sql = `
         SELECT * FROM ${this.getTableName()} 
@@ -370,7 +371,7 @@ export class AlertRepository extends BaseRepository<Alert> implements IAlertRepo
   /**
    * Find alerts that need reminder processing
    */
-  async findAlertsNeedingReminders(): Promise<Alert[]> {
+  async findAlertsNeedingReminders(): Promise<AlertEntity[]> {
     try {
       const sql = `
         SELECT * FROM ${this.getTableName()} 

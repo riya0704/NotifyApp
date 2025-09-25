@@ -35,11 +35,11 @@ export class AnalyticsService {
 
     const alertsDeliveredVsRead = {
       delivered: allUserAlertStates.length, // Simplified: assumes each state is a delivery
-      read: allUserAlertStates.filter(s => s.status === NotificationStatus.READ).length,
+      read: allUserAlertStates.filter(s => s.isRead).length,
     };
 
     const snoozedCountsPerAlert = allUserAlertStates
-      .filter(s => s.status === NotificationStatus.SNOOZED)
+      .filter(s => s.isSnoozed)
       .reduce((acc, state) => {
         acc[state.alertId] = (acc[state.alertId] || 0) + 1;
         return acc;

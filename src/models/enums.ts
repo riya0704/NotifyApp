@@ -33,3 +33,8 @@ export enum ReminderStatus {
   PROCESSED = 'processed',
   CANCELLED = 'cancelled'
 }
+
+export enum NotificationStatus {
+    READ = 'read',
+    SNOOZED = 'snoozed'
+}
