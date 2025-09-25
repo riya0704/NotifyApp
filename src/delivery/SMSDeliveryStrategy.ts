@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { DeliveryType, DeliveryStatus } from '../models/enums';
 import { User } from '../models/User';
 import { Notification, DeliveryResult } from '../models/Notification';
@@ -11,7 +12,7 @@ export class SMSDeliveryStrategy implements IDeliveryStrategy {
   async deliver(notification: Notification, user: User): Promise<DeliveryResult> {
     // In a real implementation, this would involve sending an SMS to the user's phone number
     console.log(`Delivering SMS notification to ${user.name}: "${notification.title}"`);
-    return { success: true, status: DeliveryStatus.DELIVERED };
+    return { success: true, deliveryId: uuidv4(), timestamp: new Date() };
   }
 
   async canDeliver(user: User): Promise<boolean> {
