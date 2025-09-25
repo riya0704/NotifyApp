@@ -1,4 +1,4 @@
-// Export all API controllers and routes
-export * from './AdminController';
-export * from './UserController';
-export * from './AnalyticsController';
+
+export * from './alerts';
+export * from './users';
+export * from './analytics';

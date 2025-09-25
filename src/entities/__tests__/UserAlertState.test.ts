@@ -53,7 +53,7 @@ describe('UserAlertStateEntity', () => {
       state = new UserAlertStateEntity(validCreateRequest);
     });
 
-    it('should update isRead successfully', () => {
+    it('should update isRead successfully', (done) => {
       const updateRequest: UpdateUserAlertStateRequest = { isRead: true };
       const originalUpdatedAt = state.updatedAt;
       
@@ -61,6 +61,7 @@ describe('UserAlertStateEntity', () => {
         state.update(updateRequest);
         expect(state.isRead).toBe(true);
         expect(state.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
+        done();
       }, 1);
     });
 
@@ -103,19 +104,20 @@ describe('UserAlertStateEntity', () => {
     });
 
     describe('markAsRead', () => {
-      it('should set isRead to true and update timestamp', () => {
+      it('should set isRead to true and update timestamp', (done) => {
         const originalUpdatedAt = state.updatedAt;
         
         setTimeout(() => {
           state.markAsRead();
           expect(state.isRead).toBe(true);
           expect(state.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
+          done();
         }, 1);
       });
     });
 
     describe('markAsUnread', () => {
-      it('should set isRead to false and update timestamp', () => {
+      it('should set isRead to false and update timestamp', (done) => {
         state.markAsRead();
         const originalUpdatedAt = state.updatedAt;
         
@@ -123,6 +125,7 @@ describe('UserAlertStateEntity', () => {
           state.markAsUnread();
           expect(state.isRead).toBe(false);
           expect(state.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
+          done();
         }, 1);
       });
     });
@@ -136,7 +139,7 @@ describe('UserAlertStateEntity', () => {
     });
 
     describe('snoozeForDay', () => {
-      it('should set snooze until end of current day', () => {
+      it('should set snooze until end of current day', (done) => {
         const originalUpdatedAt = state.updatedAt;
         
         setTimeout(() => {
@@ -146,17 +149,17 @@ describe('UserAlertStateEntity', () => {
           expect(state.snoozeUntil).toBeDefined();
           expect(state.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
           
-          // Check that snooze time is set to end of day
           const endOfDay = new Date();
           endOfDay.setHours(23, 59, 59, 999);
           expect(state.snoozeUntil!.getHours()).toBe(23);
           expect(state.snoozeUntil!.getMinutes()).toBe(59);
+          done();
         }, 1);
       });
     });
 
     describe('snoozeUntilTime', () => {
-      it('should set snooze until specified time', () => {
+      it('should set snooze until specified time', (done) => {
         const futureTime = new Date(Date.now() + 3600000); // 1 hour from now
         const originalUpdatedAt = state.updatedAt;
         
@@ -166,6 +169,7 @@ describe('UserAlertStateEntity', () => {
           expect(state.isSnoozed).toBe(true);
           expect(state.snoozeUntil).toBe(futureTime);
           expect(state.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
+          done();
         }, 1);
       });
 
@@ -176,7 +180,7 @@ describe('UserAlertStateEntity', () => {
     });
 
     describe('unsnooze', () => {
-      it('should clear snooze state and update timestamp', () => {
+      it('should clear snooze state and update timestamp', (done) => {
         state.snoozeForDay();
         const originalUpdatedAt = state.updatedAt;
         
@@ -186,6 +190,7 @@ describe('UserAlertStateEntity', () => {
           expect(state.isSnoozed).toBe(false);
           expect(state.snoozeUntil).toBeUndefined();
           expect(state.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
+          done();
         }, 1);
       });
     });
@@ -199,7 +204,7 @@ describe('UserAlertStateEntity', () => {
     });
 
     describe('recordDelivery', () => {
-      it('should increment delivery count and set last delivered time', () => {
+      it('should increment delivery count and set last delivered time', (done) => {
         const originalUpdatedAt = state.updatedAt;
         
         setTimeout(() => {
@@ -208,6 +213,7 @@ describe('UserAlertStateEntity', () => {
           expect(state.deliveryCount).toBe(1);
           expect(state.lastDelivered).toBeInstanceOf(Date);
           expect(state.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
+          done();
         }, 1);
       });
 
@@ -236,12 +242,15 @@ describe('UserAlertStateEntity', () => {
         expect(state.getTimeSinceLastDelivery()).toBeNull();
       });
 
-      it('should return time difference after delivery', () => {
+      it('should return time difference after delivery', (done) => {
         state.recordDelivery();
-        const timeSince = state.getTimeSinceLastDelivery();
-        
-        expect(timeSince).toBeGreaterThanOrEqual(0);
-        expect(timeSince).toBeLessThan(1000); // Should be very recent
+        setTimeout(() => {
+          const timeSince = state.getTimeSinceLastDelivery();
+          expect(timeSince).not.toBeNull();
+          expect(timeSince!).toBeGreaterThanOrEqual(0);
+          expect(timeSince!).toBeLessThan(100); // Should be very recent
+          done();
+        }, 10);
       });
     });
   });
@@ -269,13 +278,13 @@ describe('UserAlertStateEntity', () => {
         expect(state.isCurrentlySnoozed()).toBe(true);
       });
 
-      it('should return false when snooze time has expired', () => {
-        // Set snooze time to 1ms in the future, then wait
+      it('should return false when snooze time has expired', (done) => {
         const nearFuture = new Date(Date.now() + 1);
         state.snoozeUntilTime(nearFuture);
         
         setTimeout(() => {
           expect(state.isCurrentlySnoozed()).toBe(false);
+          done();
         }, 10);
       });
     });
@@ -298,7 +307,8 @@ describe('UserAlertStateEntity', () => {
 
       it('should return 0 when snooze has expired', () => {
         const pastTime = new Date(Date.now() - 1000);
-        state.update({ isSnoozed: true, snoozeUntil: pastTime });
+        state.isSnoozed = true; // Manually set state to bypass validation
+        state.snoozeUntil = pastTime;
         expect(state.getSnoozeTimeRemaining()).toBe(0);
       });
 
@@ -325,7 +335,8 @@ describe('UserAlertStateEntity', () => {
 
       it('should return true and reset when snooze has expired', () => {
         const pastTime = new Date(Date.now() - 1000);
-        state.update({ isSnoozed: true, snoozeUntil: pastTime });
+        state.isSnoozed = true; // Manually set state to bypass validation
+        state.snoozeUntil = pastTime;
         
         expect(state.resetSnoozeIfExpired()).toBe(true);
         expect(state.isSnoozed).toBe(false);

@@ -1,6 +1,9 @@
 import { TeamEntity } from '../Team';
 import { CreateTeamRequest, UpdateTeamRequest } from '../../models/Team';
 
+// Helper to introduce a delay in async tests
+const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
 describe('TeamEntity', () => {
     const validCreateRequest: CreateTeamRequest = {
         name: 'Engineering Team',
@@ -114,15 +117,14 @@ describe('TeamEntity', () => {
             team = new TeamEntity(validCreateRequest);
         });
 
-        it('should update name successfully', () => {
+        it('should update name successfully', async () => {
             const updateRequest: UpdateTeamRequest = { name: 'Updated Team Name' };
             const originalUpdatedAt = team.updatedAt;
 
-            setTimeout(() => {
-                team.update(updateRequest);
-                expect(team.name).toBe('Updated Team Name');
-                expect(team.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
-            }, 1);
+            await delay(1);
+            team.update(updateRequest);
+            expect(team.name).toBe('Updated Team Name');
+            expect(team.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
         });
 
         it('should update memberIds successfully', () => {
@@ -175,15 +177,14 @@ describe('TeamEntity', () => {
         });
 
         describe('addMember', () => {
-            it('should add new member successfully', () => {
+            it('should add new member successfully', async () => {
                 const originalUpdatedAt = team.updatedAt;
 
-                setTimeout(() => {
-                    team.addMember('user-3');
-                    expect(team.memberIds).toContain('user-3');
-                    expect(team.memberIds).toHaveLength(3);
-                    expect(team.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
-                }, 1);
+                await delay(1);
+                team.addMember('user-3');
+                expect(team.memberIds).toContain('user-3');
+                expect(team.memberIds).toHaveLength(3);
+                expect(team.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
             });
 
             it('should not add duplicate member', () => {
@@ -202,15 +203,14 @@ describe('TeamEntity', () => {
         });
 
         describe('removeMember', () => {
-            it('should remove existing member successfully', () => {
+            it('should remove existing member successfully', async () => {
                 const originalUpdatedAt = team.updatedAt;
 
-                setTimeout(() => {
-                    team.removeMember('user-1');
-                    expect(team.memberIds).not.toContain('user-1');
-                    expect(team.memberIds).toEqual(['user-2']);
-                    expect(team.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
-                }, 1);
+                await delay(1);
+                team.removeMember('user-1');
+                expect(team.memberIds).not.toContain('user-1');
+                expect(team.memberIds).toEqual(['user-2']);
+                expect(team.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
             });
 
             it('should do nothing when removing non-existent member', () => {
@@ -245,15 +245,14 @@ describe('TeamEntity', () => {
         });
 
         describe('clearMembers', () => {
-            it('should remove all members and update timestamp', () => {
+            it('should remove all members and update timestamp', async () => {
                 const originalUpdatedAt = team.updatedAt;
 
-                setTimeout(() => {
-                    team.clearMembers();
-                    expect(team.memberIds).toEqual([]);
-                    expect(team.getMemberCount()).toBe(0);
-                    expect(team.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
-                }, 1);
+                await delay(1);
+                team.clearMembers();
+                expect(team.memberIds).toEqual([]);
+                expect(team.getMemberCount()).toBe(0);
+                expect(team.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
             });
         });
     });

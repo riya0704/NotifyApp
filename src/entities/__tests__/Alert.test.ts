@@ -12,7 +12,7 @@ describe('AlertEntity', () => {
       type: VisibilityType.ORGANIZATION,
       targetIds: ['org-123']
     },
-    startTime: new Date(Date.now() + 1000), // 1 second from now
+    startTime: new Date(Date.now() - 1000), // 1 second in the past
     expiryTime: new Date(Date.now() + 86400000), // 24 hours from now
     reminderEnabled: true,
     reminderFrequency: 2

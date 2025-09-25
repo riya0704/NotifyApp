@@ -1,5 +1,5 @@
 import { UserAlertStateRepository } from '../UserAlertStateRepository';
-import { UserAlertState } from '../../models/UserAlertState';
+import { UserAlertState, UpdateUserAlertStateRequest } from '../../models/UserAlertState';
 
 describe('UserAlertStateRepository', () => {
   let repository: UserAlertStateRepository;
@@ -45,6 +45,12 @@ describe('UserAlertStateRepository', () => {
     repository = new UserAlertStateRepository(mockConnectionPool);
   });
 
+  // Helper to create a regex that is flexible with whitespace and escapes special chars
+  const sql = (query: string) => {
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(escaped.replace(/\s+/g, '\\s*'));
+  };
+
   describe('create', () => {
     it('should create a new user alert state successfully', async () => {
       mockClient.query.mockResolvedValue({ rows: [mockRow] });
@@ -52,7 +58,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.create(mockState);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO user_alert_states'),
+        expect.stringMatching(sql('INSERT INTO user_alert_states')),
         expect.arrayContaining([
           mockState.id,
           mockState.userId,
@@ -71,7 +77,7 @@ describe('UserAlertStateRepository', () => {
       await repository.create(mockState);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('ON CONFLICT (user_id, alert_id) DO UPDATE SET'),
+        expect.stringMatching(/ON CONFLICT \(user_id, alert_id\) DO UPDATE SET/),
         expect.any(Array)
       );
     });
@@ -102,15 +108,15 @@ describe('UserAlertStateRepository', () => {
 
   describe('update', () => {
     it('should update user alert state successfully', async () => {
-      const updates = { isRead: true, deliveryCount: 5 };
+      const updates: UpdateUserAlertStateRequest = { isRead: true, deliveryCount: 5 };
       mockClient.query.mockResolvedValue({ 
-        rows: [{ ...mockRow, is_read: true, delivery_count: 5 }] 
+        rows: [{ ...mockRow, is_read: true, delivery_count: 5, updated_at: new Date().toISOString() }] 
       });
 
       const result = await repository.update('state-123', updates);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE user_alert_states SET is_read = $1, delivery_count = $2, updated_at = $3'),
+        expect.stringMatching(sql('UPDATE user_alert_states SET is_read = $1, delivery_count = $2, updated_at = $3 WHERE id = $4')),
         [true, 5, expect.any(Date), 'state-123']
       );
       expect(result.isRead).toBe(true);
@@ -136,7 +142,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.findByUserId('user-456');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE user_id = $1'),
+        expect.stringMatching(sql('WHERE user_id = $1')),
         ['user-456']
       );
       expect(result).toHaveLength(1);
@@ -151,7 +157,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.findByAlertId('alert-789');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE alert_id = $1'),
+        expect.stringMatching(sql('WHERE alert_id = $1')),
         ['alert-789']
       );
       expect(result).toHaveLength(1);
@@ -166,7 +172,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.findByUserAndAlert('user-456', 'alert-789');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE user_id = $1 AND alert_id = $2'),
+        expect.stringMatching(sql('WHERE user_id = $1 AND alert_id = $2')),
         ['user-456', 'alert-789']
       );
       expect(result).not.toBeNull();
@@ -191,7 +197,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.findSnoozedStates();
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE is_snoozed = true'),
+        expect.stringMatching(sql('WHERE is_snoozed = true')),
         []
       );
       expect(result).toHaveLength(1);
@@ -205,7 +211,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.findSnoozedStates('user-456');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE is_snoozed = true AND user_id = $1'),
+        expect.stringMatching(sql('WHERE is_snoozed = true AND user_id = $1')),
         ['user-456']
       );
       expect(result).toHaveLength(1);
@@ -224,7 +230,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.findExpiredSnoozes();
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE is_snoozed = true AND snooze_until IS NOT NULL AND snooze_until <= NOW()'),
+        expect.stringMatching(sql('WHERE is_snoozed = true AND snooze_until IS NOT NULL AND snooze_until <= NOW()')),
         []
       );
       expect(result).toHaveLength(1);
@@ -240,7 +246,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.bulkCreate(states);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10), ($11, $12, $13, $14, $15, $16, $17, $18, $19, $20)'),
+        expect.stringMatching(sql('VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10), ($11, $12, $13, $14, $15, $16, $17, $18, $19, $20)')),
         expect.any(Array)
       );
       expect(result).toHaveLength(2);
@@ -261,7 +267,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.bulkUpdateSnoozeStatus(['user-1', 'user-2', 'user-3'], 'alert-123', true);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('SET is_snoozed = $1'),
+        expect.stringMatching(sql('SET is_snoozed = $1')),
         [true, 'user-1', 'user-2', 'user-3', 'alert-123']
       );
       expect(result).toBe(3);
@@ -282,7 +288,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.resetExpiredSnoozes();
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('SET is_snoozed = false, snooze_until = NULL'),
+        expect.stringMatching(sql('SET is_snoozed = false, snooze_until = NULL')),
         []
       );
       expect(result).toBe(5);
@@ -298,7 +304,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.getReadStatusStats('alert-123');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('COUNT(*) as total_users'),
+        expect.stringMatching(sql('COUNT(*) as total_users')),
         ['alert-123']
       );
       expect(result).toEqual({
@@ -318,7 +324,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.getSnoozeStats('alert-123');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('COUNT(CASE WHEN is_snoozed = true THEN 1 END) as snoozed_count'),
+        expect.stringMatching(sql('COUNT(CASE WHEN is_snoozed = true THEN 1 END) as snoozed_count')),
         ['alert-123']
       );
       expect(result).toEqual({
@@ -336,7 +342,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.findStatesNeedingReminders('alert-123');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE alert_id = $1 AND (is_snoozed = false OR'),
+        expect.stringMatching(sql('WHERE alert_id = $1 AND (is_snoozed = false OR (is_snoozed = true AND snooze_until IS NOT NULL AND snooze_until <= NOW()))')),
         ['alert-123']
       );
       expect(result).toHaveLength(1);
@@ -351,7 +357,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.recordDelivery('user-456', 'alert-789');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('SET last_delivered = NOW(), delivery_count = delivery_count + 1'),
+        expect.stringMatching(sql('SET last_delivered = NOW(), delivery_count = delivery_count + 1')),
         ['user-456', 'alert-789']
       );
       expect(result).not.toBeNull();
@@ -376,7 +382,7 @@ describe('UserAlertStateRepository', () => {
       const result = await repository.getDeliveryStats('alert-123');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('SUM(delivery_count) as total_deliveries'),
+        expect.stringMatching(sql('SUM(delivery_count) as total_deliveries')),
         ['alert-123']
       );
       expect(result).toEqual({

@@ -69,7 +69,7 @@ export abstract class BaseRepository<T, TId = string>
       const query = this.buildQueryWithOptions(options);
       const [dataResult, countResult] = await Promise.all([
         this.executeQuery(query.sql, query.params),
-        this.count(options.filter)
+        this.count(options.filter as Partial<T>)
       ]);
 
       const items = this.mapResultsToEntities(dataResult.rows);
@@ -196,7 +196,7 @@ export abstract class BaseRepository<T, TId = string>
    * Build query with pagination and sorting options
    */
   protected buildQueryWithOptions(options: IQueryOptions): { sql: string; params: any[] } {
-    const baseQuery = this.buildFindAllQuery(options.filter);
+    const baseQuery = this.buildFindAllQuery(options.filter as Partial<T>);
     let sql = baseQuery.sql;
     const params = [...baseQuery.params];
     

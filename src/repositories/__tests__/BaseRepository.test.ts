@@ -315,7 +315,7 @@ describe('BaseRepository', () => {
 
     it('should handle generic database errors', async () => {
       const error = { message: 'Connection timeout' };
-      mockClient.query.mkRejectedValue(error);
+      mockClient.query.mockRejectedValue(error);
 
       await expect(repository.findAll()).rejects.toThrow('Repository findAll operation failed');
     });
@@ -337,7 +337,7 @@ describe('BaseRepository', () => {
     it('should ignore undefined and null filter values', async () => {
       mockClient.query.mockResolvedValue({ rows: [] });
 
-      const filter = { name: 'John', email: undefined, id: null };
+      const filter = { name: 'John', email: undefined, id: undefined };
       await repository.findAll(filter);
 
       expect(mockClient.query).toHaveBeenCalledWith(

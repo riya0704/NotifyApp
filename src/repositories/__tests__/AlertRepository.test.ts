@@ -1,5 +1,5 @@
 import { AlertRepository } from '../AlertRepository';
-import { Alert, AlertFilters } from '../../models/Alert';
+import { Alert, AlertFilters, UpdateAlertRequest } from '../../models/Alert';
 import { AlertSeverity, AlertStatus, DeliveryType, VisibilityType } from '../../models/enums';
 
 describe('AlertRepository', () => {
@@ -56,6 +56,12 @@ describe('AlertRepository', () => {
     repository = new AlertRepository(mockConnectionPool);
   });
 
+  // Helper to create a regex that is flexible with whitespace and escapes special chars
+  const sql = (query: string) => {
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(escaped.replace(/\s+/g, '\\s*'));
+  };
+
   describe('create', () => {
     it('should create a new alert successfully', async () => {
       mockClient.query.mockResolvedValue({ rows: [mockRow] });
@@ -63,7 +69,7 @@ describe('AlertRepository', () => {
       const result = await repository.create(mockAlert);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO alerts'),
+        expect.stringMatching(sql('INSERT INTO alerts')),
         expect.arrayContaining([
           mockAlert.id,
           mockAlert.title,
@@ -109,7 +115,7 @@ describe('AlertRepository', () => {
 
   describe('update', () => {
     it('should update alert successfully', async () => {
-      const updates = { title: 'Updated Title', severity: AlertSeverity.CRITICAL };
+      const updates: UpdateAlertRequest = { title: 'Updated Title', severity: AlertSeverity.CRITICAL };
       mockClient.query.mockResolvedValue({ 
         rows: [{ ...mockRow, title: 'Updated Title', severity: 'critical' }] 
       });
@@ -117,14 +123,14 @@ describe('AlertRepository', () => {
       const result = await repository.update('alert-123', updates);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE alerts SET title = $1, severity = $2'),
+        expect.stringMatching(sql('UPDATE alerts SET title = $1, severity = $2')),
         ['Updated Title', AlertSeverity.CRITICAL, 'alert-123']
       );
       expect(result.title).toBe('Updated Title');
     });
 
     it('should update visibility configuration', async () => {
-      const updates = {
+      const updates: UpdateAlertRequest = {
         visibility: {
           type: VisibilityType.TEAM,
           targetIds: ['team-123', 'team-456']
@@ -141,7 +147,7 @@ describe('AlertRepository', () => {
       const result = await repository.update('alert-123', updates);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('visibility_type = $1, target_ids = $2'),
+        expect.stringMatching(sql('visibility_type = $1, target_ids = $2')),
         ['team', '["team-123","team-456"]', 'alert-123']
       );
       expect(result.visibility.type).toBe(VisibilityType.TEAM);
@@ -188,7 +194,7 @@ describe('AlertRepository', () => {
       const result = await repository.findByVisibility('org-456');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('visibility_type = $2 AND target_ids::jsonb ? $3'),
+        expect.stringMatching(sql('visibility_type = $2 AND target_ids::jsonb ? $3')),
         [AlertStatus.ACTIVE, VisibilityType.ORGANIZATION, 'org-456']
       );
       expect(result).toHaveLength(1);
@@ -200,7 +206,7 @@ describe('AlertRepository', () => {
       const result = await repository.findByVisibility('org-456', 'team-123', 'user-789');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('OR (visibility_type = $4 AND target_ids::jsonb ? $5)'),
+        expect.stringMatching(sql('OR (visibility_type = $4 AND target_ids::jsonb ? $5)')),
         [
           AlertStatus.ACTIVE, 
           VisibilityType.ORGANIZATION, 'org-456',
@@ -219,7 +225,7 @@ describe('AlertRepository', () => {
       const result = await repository.findActiveAlerts();
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE status = $1 AND start_time <= NOW() AND expiry_time > NOW()'),
+        expect.stringMatching(sql('WHERE status = $1 AND start_time <= NOW() AND expiry_time > NOW()')),
         [AlertStatus.ACTIVE]
       );
       expect(result).toHaveLength(1);
@@ -234,7 +240,7 @@ describe('AlertRepository', () => {
       const result = await repository.findExpiredAlerts();
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE (status = $1 AND expiry_time <= NOW()) OR status = $2'),
+        expect.stringMatching(sql('WHERE (status = $1 AND expiry_time <= NOW()) OR status = $2')),
         [AlertStatus.ACTIVE, AlertStatus.EXPIRED]
       );
       expect(result).toHaveLength(1);
@@ -248,7 +254,7 @@ describe('AlertRepository', () => {
       const result = await repository.findByCreator('admin-123');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE created_by = $1'),
+        expect.stringMatching(sql('WHERE created_by = $1')),
         ['admin-123']
       );
       expect(result).toHaveLength(1);
@@ -263,7 +269,7 @@ describe('AlertRepository', () => {
       const result = await repository.findWithFilters(filters);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE severity = $1'),
+        expect.stringMatching(sql('WHERE severity = $1')),
         [AlertSeverity.WARNING]
       );
       expect(result).toHaveLength(1);
@@ -280,7 +286,7 @@ describe('AlertRepository', () => {
       const result = await repository.findWithFilters(filters);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE severity = $1 AND status = $2 AND created_by = $3'),
+        expect.stringMatching(sql('WHERE severity = $1 AND status = $2 AND created_by = $3')),
         [AlertSeverity.WARNING, AlertStatus.ACTIVE, 'admin-123']
       );
       expect(result).toHaveLength(1);
@@ -296,7 +302,7 @@ describe('AlertRepository', () => {
       const result = await repository.findWithFilters(filters);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE created_at >= $1 AND created_at <= $2'),
+        expect.stringMatching(sql('WHERE created_at >= $1 AND created_at <= $2')),
         [startDate, endDate]
       );
       expect(result).toHaveLength(1);
@@ -322,7 +328,7 @@ describe('AlertRepository', () => {
       const result = await repository.archiveAlert('alert-123');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('SET status = $1 WHERE id = $2 AND status != $3'),
+        expect.stringMatching(sql('SET status = $1 WHERE id = $2 AND status != $3')),
         [AlertStatus.ARCHIVED, 'alert-123', AlertStatus.ARCHIVED]
       );
       expect(result).toBe(true);
@@ -344,7 +350,7 @@ describe('AlertRepository', () => {
       const result = await repository.markAsExpired('alert-123');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('SET status = $1 WHERE id = $2 AND status = $3'),
+        expect.stringMatching(sql('SET status = $1 WHERE id = $2 AND status = $3')),
         [AlertStatus.EXPIRED, 'alert-123', AlertStatus.ACTIVE]
       );
       expect(result).toBe(true);
@@ -366,7 +372,7 @@ describe('AlertRepository', () => {
       const result = await repository.findAlertsForUser('user-123', 'team-456', 'org-789');
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('ORDER BY severity DESC, created_at DESC'),
+        expect.stringMatching(sql('ORDER BY severity DESC, created_at DESC')),
         [
           AlertStatus.ACTIVE,
           VisibilityType.ORGANIZATION, 'org-789',
@@ -385,7 +391,7 @@ describe('AlertRepository', () => {
       const result = await repository.markExpiredAlerts();
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('SET status = $1 WHERE status = $2 AND expiry_time <= NOW()'),
+        expect.stringMatching(sql('SET status = $1 WHERE status = $2 AND expiry_time <= NOW()')),
         [AlertStatus.EXPIRED, AlertStatus.ACTIVE]
       );
       expect(result).toBe(3);
@@ -399,7 +405,7 @@ describe('AlertRepository', () => {
       const result = await repository.findAlertsNeedingReminders();
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE status = $1 AND reminder_enabled = true'),
+        expect.stringMatching(sql('WHERE status = $1 AND reminder_enabled = true')),
         [AlertStatus.ACTIVE]
       );
       expect(result).toHaveLength(1);

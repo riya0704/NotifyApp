@@ -169,7 +169,7 @@ export class AlertEntity implements IAlert {
       throw new Error('Invalid visibility type');
     }
     if (!visibility.targetIds || visibility.targetIds.length === 0) {
-      throw new Error('At least one target ID is required for visibility configuration');
+      throw new Error('At least one target ID is required');
     }
     if (visibility.targetIds.some(id => !id || id.trim().length === 0)) {
       throw new Error('All target IDs must be non-empty strings');
@@ -180,11 +180,11 @@ export class AlertEntity implements IAlert {
     const start = startTime || this.startTime;
     const expiry = expiryTime || this.expiryTime;
     
-    if (start >= expiry) {
-      throw new Error('Alert start time must be before expiry time');
-    }
     if (expiry <= new Date()) {
       throw new Error('Alert expiry time must be in the future');
+    }
+    if (start >= expiry) {
+      throw new Error('Alert start time must be before expiry time');
     }
   }
 }
