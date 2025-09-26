@@ -3,9 +3,30 @@ import express from 'express';
 import alertsRouter from './routes/AlertsRouter';
 import teamsRouter from './routes/TeamsRouter';
 import usersRouter from './routes/UsersRouter';
+import { AlertRepository } from './repositories/AlertRepository';
+import { AlertService } from './services/AlertService';
+import { NotificationService } from './services/NotificationService';
+import { NotificationScheduler } from './services/NotificationScheduler';
+import { TeamRepository } from './repositories/TeamRepository';
+import { UserRepository } from './repositories/UserRepository';
+import { UserAlertStateRepository } from './repositories/UserAlertStateRepository';
 
 const app = express();
 const port = 3000;
+
+// Initialize repositories
+const alertRepository = new AlertRepository();
+const teamRepository = new TeamRepository();
+const userRepository = new UserRepository();
+const userAlertStateRepository = new UserAlertStateRepository();
+
+// Initialize services
+const alertService = new AlertService(alertRepository);
+const notificationService = new NotificationService(userRepository, teamRepository, userAlertStateRepository);
+const notificationScheduler = new NotificationScheduler(alertService, notificationService, userAlertStateRepository);
+
+// Start the notification scheduler
+notificationScheduler.start();
 
 app.use(express.json());
 
@@ -75,4 +96,10 @@ app.get('/', (req, res) => {
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  notificationScheduler.stop();
+  process.exit(0);
 });

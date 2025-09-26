@@ -76,11 +76,11 @@ export class UserAlertStateEntity implements IUserAlertState {
 
   public snoozeForDay(): void {
     this.isSnoozed = true;
-    // Set snooze until end of current day
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
     this.snoozeUntil = endOfDay;
     this.updatedAt = new Date();
+    this.scheduleNextDayReminder();
   }
 
   public snoozeUntilTime(until: Date): void {
@@ -110,12 +110,10 @@ export class UserAlertStateEntity implements IUserAlertState {
       return false;
     }
     
-    // If no snooze time set, consider it snoozed
     if (!this.snoozeUntil) {
       return true;
     }
     
-    // Check if snooze period has expired
     return new Date() < this.snoozeUntil;
   }
 
@@ -168,6 +166,15 @@ export class UserAlertStateEntity implements IUserAlertState {
       deliveryCount: this.deliveryCount,
       timeSinceLastDelivery: this.getTimeSinceLastDelivery()
     };
+  }
+
+  private scheduleNextDayReminder(): void {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+
+    // This is a placeholder for a real scheduling mechanism
+    console.log(`Reminder scheduled for alert ${this.alertId} for user ${this.userId} at ${tomorrow}`);
   }
 
   private validateCreateRequest(request: CreateUserAlertStateRequest): void {

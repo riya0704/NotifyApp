@@ -168,9 +168,16 @@ export class AlertEntity implements IAlert {
     if (!Object.values(VisibilityType).includes(visibility.type)) {
       throw new Error('Invalid visibility type');
     }
-    if (!visibility.targetIds || visibility.targetIds.length === 0) {
-      throw new Error('At least one target ID is required');
+
+    if (visibility.type === VisibilityType.ORGANIZATION) {
+      // No target IDs are required for organization-wide alerts
+      return;
     }
+
+    if (!visibility.targetIds || visibility.targetIds.length === 0) {
+      throw new Error(`At least one target ID is required for visibility type: ${visibility.type}`);
+    }
+
     if (visibility.targetIds.some(id => !id || id.trim().length === 0)) {
       throw new Error('All target IDs must be non-empty strings');
     }
