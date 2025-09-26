@@ -1,10 +1,15 @@
+import { Pool } from 'pg';
 import { BaseRepository } from './BaseRepository';
-import { Alert, AlertFilters } from '../models/Alert';
+import { Alert, AlertFilters, UpdateAlertRequest } from '../models/Alert';
 import { AlertEntity } from '../entities/Alert';
-import { AlertSeverity, AlertStatus, VisibilityType } from '../models/enums';
+import { AlertSeverity, AlertStatus, DeliveryType, VisibilityType } from '../models/enums';
 
 export interface IAlertRepository {
-  findByVisibility(organizationId: string, teamId?: string, userId?: string): Promise<AlertEntity[]>;
+  create(entity: AlertEntity): Promise<AlertEntity>;
+  findById(id: string): Promise<AlertEntity | null>;
+  update(id: string, updates: UpdateAlertRequest): Promise<AlertEntity>;
+  delete(id: string): Promise<boolean>;
+  findByVisibility(visibilityIds: { organizationId?: string, teamId?: string, userId?: string }): Promise<AlertEntity[]>;
   findActiveAlerts(): Promise<AlertEntity[]>;
   findExpiredAlerts(): Promise<AlertEntity[]>;
   findByCreator(createdBy: string): Promise<AlertEntity[]>;
@@ -12,23 +17,32 @@ export interface IAlertRepository {
   archiveAlert(id: string): Promise<boolean>;
   markAsExpired(id: string): Promise<boolean>;
   findAlertsForUser(userId: string, teamId: string, organizationId: string): Promise<AlertEntity[]>;
+  markExpiredAlerts(): Promise<number>;
+  findAlertsNeedingReminders(): Promise<AlertEntity[]>;
 }
 
-export class AlertRepository extends BaseRepository<AlertEntity> implements IAlertRepository {
+export class AlertRepository extends BaseRepository<AlertEntity, string> implements IAlertRepository {
+  constructor(pool: Pool) {
+    super(pool);
+  }
+
   protected getTableName(): string {
     return 'alerts';
   }
 
   protected mapResultsToEntities(rows: any[]): AlertEntity[] {
-    const alerts: Alert[] = rows.map(row => ({
+    if (!rows || rows.length === 0) {
+      return [];
+    }
+    return rows.map(row => AlertEntity.fromData({
       id: row.id,
       title: row.title,
       message: row.message,
       severity: row.severity as AlertSeverity,
-      deliveryType: row.delivery_type,
+      deliveryType: row.delivery_type as DeliveryType,
       visibility: {
         type: row.visibility_type as VisibilityType,
-        targetIds: JSON.parse(row.target_ids)
+        targetIds: typeof row.target_ids === 'string' ? JSON.parse(row.target_ids) : row.target_ids,
       },
       startTime: new Date(row.start_time),
       expiryTime: new Date(row.expiry_time),
@@ -36,9 +50,8 @@ export class AlertRepository extends BaseRepository<AlertEntity> implements IAle
       reminderFrequency: row.reminder_frequency,
       createdBy: row.created_by,
       createdAt: new Date(row.created_at),
-      status: row.status as AlertStatus
+      status: row.status as AlertStatus,
     }));
-    return alerts.map(alert => AlertEntity.fromData(alert));
   }
 
   protected mapEntityToRow(entity: AlertEntity): Record<string, any> {
@@ -56,56 +69,12 @@ export class AlertRepository extends BaseRepository<AlertEntity> implements IAle
       reminder_frequency: entity.reminderFrequency,
       created_by: entity.createdBy,
       created_at: entity.createdAt,
-      status: entity.status
+      status: entity.status,
     };
   }
 
-  async create(entity: AlertEntity): Promise<AlertEntity> {
-    this.validateEntity(entity);
-    
-    const row = this.mapEntityToRow(entity);
-    const sql = `
-      INSERT INTO ${this.getTableName()} 
-      (id, title, message, severity, delivery_type, visibility_type, target_ids, 
-       start_time, expiry_time, reminder_enabled, reminder_frequency, created_by, created_at, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-      RETURNING *
-    `;
-    
-    const params = [
-      row.id, row.title, row.message, row.severity, row.delivery_type,
-      row.visibility_type, row.target_ids, row.start_time, row.expiry_time,
-      row.reminder_enabled, row.reminder_frequency, row.created_by, row.created_at, row.status
-    ];
-    
-    try {
-      const result = await this.executeQuery(sql, params);
-      return this.mapResultsToEntities(result.rows)[0];
-    } catch (error) {
-      throw this.handleError('create', error);
-    }
-  }
-
-  async findById(id: string): Promise<AlertEntity | null> {
-    try {
-      const sql = `SELECT * FROM ${this.getTableName()} WHERE id = $1`;
-      const result = await this.executeQuery(sql, [id]);
-      const entities = this.mapResultsToEntities(result.rows);
-      return entities.length > 0 ? entities[0] : null;
-    } catch (error) {
-      throw this.handleError('findById', error);
-    }
-  }
-
-  async update(id: string, updates: Partial<AlertEntity>): Promise<AlertEntity> {
-    this.validateEntity(updates);
-    
-    const setClauses: string[] = [];
-    const params: any[] = [];
-    let paramIndex = 1;
-
-    // Map updates to database columns
-    const columnMappings: Record<string, string> = {
+  async update(id: string, updates: UpdateAlertRequest): Promise<AlertEntity> {
+    const updateMapping = {
       title: 'title',
       message: 'message',
       severity: 'severity',
@@ -114,277 +83,176 @@ export class AlertRepository extends BaseRepository<AlertEntity> implements IAle
       expiryTime: 'expiry_time',
       reminderEnabled: 'reminder_enabled',
       reminderFrequency: 'reminder_frequency',
-      status: 'status'
+      status: 'status',
     };
-
-    for (const [key, value] of Object.entries(updates)) {
-      if (value !== undefined) {
-        if (key === 'visibility') {
-          setClauses.push(`visibility_type = $${paramIndex}`);
-          params.push((value as any).type);
-          paramIndex++;
-          setClauses.push(`target_ids = $${paramIndex}`);
-          params.push(JSON.stringify((value as any).targetIds));
-          paramIndex++;
-        } else if (columnMappings[key]) {
-          setClauses.push(`${columnMappings[key]} = $${paramIndex}`);
-          params.push(value);
-          paramIndex++;
+  
+    try {
+      const validUpdates: { [key: string]: any } = {};
+  
+      for (const [key, column] of Object.entries(updateMapping)) {
+        if (updates.hasOwnProperty(key)) {
+          validUpdates[column] = (updates as any)[key];
         }
       }
-    }
-
-    if (setClauses.length === 0) {
-      throw new Error('No valid fields to update');
-    }
-
-    params.push(id);
-    const sql = `
-      UPDATE ${this.getTableName()} 
-      SET ${setClauses.join(', ')} 
-      WHERE id = $${paramIndex} 
-      RETURNING *
-    `;
-
-    try {
-      const result = await this.executeQuery(sql, params);
+  
+      if (updates.visibility) {
+        validUpdates.visibility_type = updates.visibility.type;
+        validUpdates.target_ids = JSON.stringify(updates.visibility.targetIds);
+      }
+  
+      const columns = Object.keys(validUpdates);
+      if (columns.length === 0) {
+        throw new Error('No valid fields to update');
+      }
+  
+      const setClause = columns.map((col, i) => `${col} = $${i + 1}`).join(', ');
+      const params = [...Object.values(validUpdates), id];
+  
+      const query = `
+        UPDATE ${this.getTableName()}
+        SET ${setClause}
+        WHERE id = $${params.length}
+        RETURNING *
+      `;
+  
+      const result = await this.executeQuery(query, params);
       if (result.rows.length === 0) {
         throw new Error(`Alert with ID ${id} not found`);
       }
       return this.mapResultsToEntities(result.rows)[0];
     } catch (error) {
+      if (error instanceof Error && (error.message === 'No valid fields to update' || error.message.startsWith('Alert with ID'))) {
+        throw error;
+      }
       throw this.handleError('update', error);
     }
   }
 
-  async delete(id: string): Promise<boolean> {
-    try {
-      const sql = `DELETE FROM ${this.getTableName()} WHERE id = $1`;
-      const result = await this.executeQuery(sql, [id]);
-      return result.rowCount > 0;
-    } catch (error) {
-      throw this.handleError('delete', error);
-    }
-  }
+  async findByVisibility(visibilityIds: { organizationId?: string, teamId?: string, userId?: string }): Promise<AlertEntity[]> {
+    const visibilityMapping = {
+      organizationId: VisibilityType.ORGANIZATION,
+      teamId: VisibilityType.TEAM,
+      userId: VisibilityType.USER,
+    };
 
-  async findByVisibility(organizationId: string, teamId?: string, userId?: string): Promise<AlertEntity[]> {
-    try {
-      let sql = `
-        SELECT * FROM ${this.getTableName()} 
-        WHERE status = $1 AND start_time <= NOW() AND expiry_time > NOW()
-        AND (
-          (visibility_type = $2 AND target_ids::jsonb ? $3)
-      `;
-      
-      const params = [AlertStatus.ACTIVE, VisibilityType.ORGANIZATION, organizationId];
-      let paramIndex = 4;
+    const queryParts: string[] = [];
+    const params: any[] = [AlertStatus.ACTIVE];
+    let paramIndex = 2;
 
-      if (teamId) {
-        sql += ` OR (visibility_type = $${paramIndex} AND target_ids::jsonb ? $${paramIndex + 1})`;
-        params.push(VisibilityType.TEAM, teamId);
-        paramIndex += 2;
+    for (const [key, type] of Object.entries(visibilityMapping)) {
+      if (visibilityIds.hasOwnProperty(key) && (visibilityIds as any)[key]) {
+        queryParts.push(`(visibility_type = $${paramIndex++} AND target_ids::jsonb ? $${paramIndex++})`);
+        params.push(type, (visibilityIds as any)[key]);
       }
-
-      if (userId) {
-        sql += ` OR (visibility_type = $${paramIndex} AND target_ids::jsonb ? $${paramIndex + 1})`;
-        params.push(VisibilityType.USER, userId);
-      }
-
-      sql += ') ORDER BY created_at DESC';
-
-      const result = await this.executeQuery(sql, params);
-      return this.mapResultsToEntities(result.rows);
-    } catch (error) {
-      throw this.handleError('findByVisibility', error);
     }
+    
+    if (queryParts.length === 0) {
+        return [];
+    }
+
+    const query = `
+      SELECT * FROM ${this.getTableName()}
+      WHERE status = $1 AND (${queryParts.join(' OR ')})
+      ORDER BY severity DESC, created_at DESC
+    `;
+    
+    const result = await this.executeQuery(query, params);
+    return this.mapResultsToEntities(result.rows);
   }
 
   async findActiveAlerts(): Promise<AlertEntity[]> {
-    try {
-      const sql = `
-        SELECT * FROM ${this.getTableName()} 
-        WHERE status = $1 AND start_time <= NOW() AND expiry_time > NOW()
-        ORDER BY created_at DESC
-      `;
-      const result = await this.executeQuery(sql, [AlertStatus.ACTIVE]);
-      return this.mapResultsToEntities(result.rows);
-    } catch (error) {
-      throw this.handleError('findActiveAlerts', error);
-    }
+    const query = `
+      SELECT * FROM ${this.getTableName()}
+      WHERE status = $1 AND start_time <= NOW() AND expiry_time > NOW()
+      ORDER BY created_at DESC
+    `;
+    const result = await this.executeQuery(query, [AlertStatus.ACTIVE]);
+    return this.mapResultsToEntities(result.rows);
   }
 
   async findExpiredAlerts(): Promise<AlertEntity[]> {
-    try {
-      const sql = `
-        SELECT * FROM ${this.getTableName()} 
-        WHERE (status = $1 AND expiry_time <= NOW()) OR status = $2
-        ORDER BY expiry_time DESC
-      `;
-      const result = await this.executeQuery(sql, [AlertStatus.ACTIVE, AlertStatus.EXPIRED]);
-      return this.mapResultsToEntities(result.rows);
-    } catch (error) {
-      throw this.handleError('findExpiredAlerts', error);
-    }
+    const query = `
+      SELECT * FROM ${this.getTableName()}
+      WHERE (status = $1 AND expiry_time <= NOW()) OR status = $2
+      ORDER BY created_at DESC
+    `;
+    const result = await this.executeQuery(query, [AlertStatus.ACTIVE, AlertStatus.EXPIRED]);
+    return this.mapResultsToEntities(result.rows);
   }
 
   async findByCreator(createdBy: string): Promise<AlertEntity[]> {
-    try {
-      const sql = `
-        SELECT * FROM ${this.getTableName()} 
-        WHERE created_by = $1 
-        ORDER BY created_at DESC
-      `;
-      const result = await this.executeQuery(sql, [createdBy]);
-      return this.mapResultsToEntities(result.rows);
-    } catch (error) {
-      throw this.handleError('findByCreator', error);
-    }
+    const query = `SELECT * FROM ${this.getTableName()} WHERE created_by = $1 ORDER BY created_at DESC`;
+    const result = await this.executeQuery(query, [createdBy]);
+    return this.mapResultsToEntities(result.rows);
   }
 
   async findWithFilters(filters: AlertFilters): Promise<AlertEntity[]> {
-    try {
-      const conditions: string[] = [];
-      const params: any[] = [];
-      let paramIndex = 1;
+    const filterMapping: { [key in keyof AlertFilters]: (p: number) => string } = {
+      severity: (p) => `severity = $${p}`,
+      status: (p) => `status = $${p}`,
+      createdBy: (p) => `created_by = $${p}`,
+      startDate: (p) => `created_at >= $${p}`,
+      endDate: (p) => `created_at <= $${p}`,
+    };
 
-      if (filters.severity) {
-        conditions.push(`severity = $${paramIndex}`);
-        params.push(filters.severity);
-        paramIndex++;
+    const queryParts: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    for (const [key, getClause] of Object.entries(filterMapping)) {
+      if (filters.hasOwnProperty(key)) {
+        queryParts.push(getClause(paramIndex++));
+        params.push((filters as any)[key]);
       }
-
-      if (filters.status) {
-        conditions.push(`status = $${paramIndex}`);
-        params.push(filters.status);
-        paramIndex++;
-      }
-
-      if (filters.visibilityType) {
-        conditions.push(`visibility_type = $${paramIndex}`);
-        params.push(filters.visibilityType);
-        paramIndex++;
-      }
-
-      if (filters.createdBy) {
-        conditions.push(`created_by = $${paramIndex}`);
-        params.push(filters.createdBy);
-        paramIndex++;
-      }
-
-      if (filters.startDate) {
-        conditions.push(`created_at >= $${paramIndex}`);
-        params.push(filters.startDate);
-        paramIndex++;
-      }
-
-      if (filters.endDate) {
-        conditions.push(`created_at <= $${paramIndex}`);
-        params.push(filters.endDate);
-        paramIndex++;
-      }
-
-      let sql = `SELECT * FROM ${this.getTableName()}`;
-      if (conditions.length > 0) {
-        sql += ` WHERE ${conditions.join(' AND ')}`;
-      }
-      sql += ' ORDER BY created_at DESC';
-
-      const result = await this.executeQuery(sql, params);
-      return this.mapResultsToEntities(result.rows);
-    } catch (error) {
-      throw this.handleError('findWithFilters', error);
     }
+
+    const whereClause = queryParts.length > 0 ? `WHERE ${queryParts.join(' AND ')}` : '';
+    const query = `SELECT * FROM ${this.getTableName()} ${whereClause} ORDER BY created_at DESC`;
+    
+    const result = await this.executeQuery(query, params);
+    return this.mapResultsToEntities(result.rows);
   }
 
   async archiveAlert(id: string): Promise<boolean> {
-    try {
-      const sql = `
-        UPDATE ${this.getTableName()} 
-        SET status = $1 
-        WHERE id = $2 AND status != $3
-      `;
-      const result = await this.executeQuery(sql, [AlertStatus.ARCHIVED, id, AlertStatus.ARCHIVED]);
-      return result.rowCount > 0;
-    } catch (error) {
-      throw this.handleError('archiveAlert', error);
-    }
+    const query = `
+      UPDATE ${this.getTableName()}
+      SET status = $1
+      WHERE id = $2 AND status != $1
+    `;
+    const result = await this.executeQuery(query, [AlertStatus.ARCHIVED, id]);
+    return (result.rowCount ?? 0) > 0;
   }
 
   async markAsExpired(id: string): Promise<boolean> {
-    try {
-      const sql = `
-        UPDATE ${this.getTableName()} 
-        SET status = $1 
-        WHERE id = $2 AND status = $3
-      `;
-      const result = await this.executeQuery(sql, [AlertStatus.EXPIRED, id, AlertStatus.ACTIVE]);
-      return result.rowCount > 0;
-    } catch (error) {
-      throw this.handleError('markAsExpired', error);
-    }
+    const query = `
+      UPDATE ${this.getTableName()}
+      SET status = $1
+      WHERE id = $2 AND status = $3
+    `;
+    const result = await this.executeQuery(query, [AlertStatus.EXPIRED, id, AlertStatus.ACTIVE]);
+    return (result.rowCount ?? 0) > 0;
   }
 
   async findAlertsForUser(userId: string, teamId: string, organizationId: string): Promise<AlertEntity[]> {
-    try {
-      const sql = `
-        SELECT * FROM ${this.getTableName()} 
-        WHERE status = $1 AND start_time <= NOW() AND expiry_time > NOW()
-        AND (
-          (visibility_type = $2 AND target_ids::jsonb ? $3) OR
-          (visibility_type = $4 AND target_ids::jsonb ? $5) OR
-          (visibility_type = $6 AND target_ids::jsonb ? $7)
-        )
-        ORDER BY severity DESC, created_at DESC
-      `;
-      
-      const params = [
-        AlertStatus.ACTIVE,
-        VisibilityType.ORGANIZATION, organizationId,
-        VisibilityType.TEAM, teamId,
-        VisibilityType.USER, userId
-      ];
-
-      const result = await this.executeQuery(sql, params);
-      return this.mapResultsToEntities(result.rows);
-    } catch (error) {
-      throw this.handleError('findAlertsForUser', error);
-    }
+    return this.findByVisibility({ userId, teamId, organizationId });
   }
 
-  /**
-   * Batch update alert statuses for expired alerts
-   */
   async markExpiredAlerts(): Promise<number> {
-    try {
-      const sql = `
-        UPDATE ${this.getTableName()} 
-        SET status = $1 
-        WHERE status = $2 AND expiry_time <= NOW()
-      `;
-      const result = await this.executeQuery(sql, [AlertStatus.EXPIRED, AlertStatus.ACTIVE]);
-      return result.rowCount;
-    } catch (error) {
-      throw this.handleError('markExpiredAlerts', error);
-    }
+    const query = `
+      UPDATE ${this.getTableName()}
+      SET status = $1
+      WHERE status = $2 AND expiry_time <= NOW()
+    `;
+    const result = await this.executeQuery(query, [AlertStatus.EXPIRED, AlertStatus.ACTIVE]);
+    return result.rowCount ?? 0;
   }
 
-  /**
-   * Find alerts that need reminder processing
-   */
   async findAlertsNeedingReminders(): Promise<AlertEntity[]> {
-    try {
-      const sql = `
-        SELECT * FROM ${this.getTableName()} 
-        WHERE status = $1 
-        AND reminder_enabled = true 
-        AND start_time <= NOW() 
-        AND expiry_time > NOW()
-        ORDER BY created_at ASC
-      `;
-      const result = await this.executeQuery(sql, [AlertStatus.ACTIVE]);
-      return this.mapResultsToEntities(result.rows);
-    } catch (error) {
-      throw this.handleError('findAlertsNeedingReminders', error);
-    }
+    const query = `
+      SELECT * FROM ${this.getTableName()}
+      WHERE status = $1 AND reminder_enabled = true AND expiry_time > NOW()
+    `;
+    const result = await this.executeQuery(query, [AlertStatus.ACTIVE]);
+    return this.mapResultsToEntities(result.rows);
   }
 }

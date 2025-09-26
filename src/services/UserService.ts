@@ -2,20 +2,23 @@
 import { UserEntity } from '../entities/User';
 import { AlertEntity } from '../entities/Alert';
 import { UserRepository } from '../repositories/UserRepository';
+import { AlertRepository } from '../repositories/AlertRepository';
 import { UserAlertStateRepository } from '../repositories/UserAlertStateRepository';
 import { UserAlertStateEntity } from '../entities/UserAlertState';
-import { NotificationStatus } from '../models/enums';
 import { CreateUserRequest } from '../models/User';
 
 export class UserService {
   private userRepository: UserRepository;
+  private alertRepository: AlertRepository;
   private userAlertStateRepository: UserAlertStateRepository;
 
   constructor(
     userRepository: UserRepository,
+    alertRepository: AlertRepository,
     userAlertStateRepository: UserAlertStateRepository
   ) {
     this.userRepository = userRepository;
+    this.alertRepository = alertRepository;
     this.userAlertStateRepository = userAlertStateRepository;
   }
 
@@ -29,59 +32,43 @@ export class UserService {
   }
 
   public async snoozeAlert(userId: string, alertId: string): Promise<UserAlertStateEntity> {
-    let userAlertState = await this.userAlertStateRepository.findByUserIdAndAlertId(userId, alertId);
+    const existingState = await this.userAlertStateRepository.findByUserAndAlert(userId, alertId);
 
-    if (userAlertState) {
-      userAlertState.snooze();
-      return this.userAlertStateRepository.update(userAlertState.id, userAlertState);
+    if (existingState) {
+      const userAlertState = UserAlertStateEntity.fromData(existingState);
+      userAlertState.snoozeForDay();
+      await this.userAlertStateRepository.update(userAlertState.id, userAlertState);
+      return userAlertState;
     } else {
-      userAlertState = new UserAlertStateEntity({
-        userId,
-        alertId,
-        status: NotificationStatus.SNOOZED,
-        snoozedUntil: new Date(new Date().setHours(24, 0, 0, 0)), // Snooze until next day
-      });
-      return this.userAlertStateRepository.create(userAlertState);
+      const userAlertState = new UserAlertStateEntity({ userId, alertId });
+      userAlertState.snoozeForDay();
+      await this.userAlertStateRepository.create(userAlertState);
+      return userAlertState;
     }
   }
 
   public async markAlertAsRead(userId: string, alertId: string): Promise<UserAlertStateEntity> {
-    let userAlertState = await this.userAlertStateRepository.findByUserIdAndAlertId(userId, alertId);
+    const existingState = await this.userAlertStateRepository.findByUserAndAlert(userId, alertId);
 
-    if (userAlertState) {
+    if (existingState) {
+      const userAlertState = UserAlertStateEntity.fromData(existingState);
       userAlertState.markAsRead();
-      return this.userAlertStateRepository.update(userAlertState.id, userAlertState);
+      await this.userAlertStateRepository.update(userAlertState.id, userAlertState);
+      return userAlertState;
     } else {
-      userAlertState = new UserAlertStateEntity({
-        userId,
-        alertId,
-        status: NotificationStatus.READ,
-      });
-      return this.userAlertStateRepository.create(userAlertState);
+      const userAlertState = new UserAlertStateEntity({ userId, alertId });
+      userAlertState.markAsRead();
+      await this.userAlertStateRepository.create(userAlertState);
+      return userAlertState;
     }
   }
 
   public async getUserAlerts(userId: string): Promise<AlertEntity[]> {
-    // This is a simplified implementation. A more robust solution would involve
-    // a direct query to the database to get all alerts for a user based on their
-    // team and organization.
     const user = await this.userRepository.findById(userId);
     if (!user) {
       return [];
     }
 
-    // In a real application, you'd fetch alerts based on user, team, and org.
-    // For this MVP, we'll just return all active alerts.
-    // A more advanced implementation would be needed here to filter alerts correctly.
-    const allActiveAlerts = await this.userAlertStateRepository.findAllActiveAlertsForUser(userId);
-    
-    // This is not efficient, but for the MVP it will work.
-    const alerts: AlertEntity[] = [];
-    for (const activeAlert of allActiveAlerts) {
-        // This is a placeholder for where you would fetch the actual AlertEntity
-        // based on the activeAlert.alertId
-    }
-
-    return alerts;
+    return this.alertRepository.findAlertsForUser(user.id, user.teamId, user.organizationId);
   }
 }

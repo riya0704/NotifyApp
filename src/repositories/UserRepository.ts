@@ -65,6 +65,16 @@ export class UserRepository extends BaseRepository<UserEntity> {
     }
   }
 
+  async findAllByIds(ids: string[]): Promise<UserEntity[]> {
+    try {
+      const sql = `SELECT * FROM ${this.getTableName()} WHERE id = ANY($1)`;
+      const result = await this.executeQuery(sql, [ids]);
+      return this.mapResultsToEntities(result.rows);
+    } catch (error) {
+      throw this.handleError('findAllByIds', error);
+    }
+  }
+
   async update(id: string, updates: Partial<UserEntity>): Promise<UserEntity> {
     this.validateEntity(updates);
     const setClauses: string[] = [];
@@ -114,7 +124,7 @@ export class UserRepository extends BaseRepository<UserEntity> {
     try {
       const sql = `DELETE FROM ${this.getTableName()} WHERE id = $1`;
       const result = await this.executeQuery(sql, [id]);
-      return result.rowCount > 0;
+      return (result.rowCount ?? 0) > 0;
     } catch (error) {
       throw this.handleError('delete', error);
     }

@@ -1,4 +1,4 @@
-import { AlertSeverity, DeliveryType, DeliveryStatus } from './enums';
+import { AlertSeverity, DeliveryType, DeliveryStatus, NotificationStatus } from './enums';
 
 export interface Notification {
   id: string;
@@ -9,6 +9,7 @@ export interface Notification {
   severity: AlertSeverity;
   deliveryType: DeliveryType;
   timestamp: Date;
+  status: NotificationStatus;
 }
 
 export interface DeliveryResult {

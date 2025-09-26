@@ -35,6 +35,7 @@ export enum ReminderStatus {
 }
 
 export enum NotificationStatus {
+    SENT = 'sent',
     READ = 'read',
     SNOOZED = 'snoozed'
 }

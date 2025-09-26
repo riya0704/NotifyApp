@@ -50,106 +50,57 @@ export class UserAlertStateRepository extends BaseRepository<UserAlertState> imp
   }
 
   async create(entity: UserAlertState): Promise<UserAlertState> {
-    this.validateEntity(entity);
-    
-    const row = this.mapEntityToRow(entity);
-    const sql = `
-      INSERT INTO ${this.getTableName()} 
-      (id, user_id, alert_id, is_read, is_snoozed, snooze_until, last_delivered, delivery_count, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      ON CONFLICT (user_id, alert_id) DO UPDATE SET
-        is_read = EXCLUDED.is_read,
-        is_snoozed = EXCLUDED.is_snoozed,
-        snooze_until = EXCLUDED.snooze_until,
-        last_delivered = EXCLUDED.last_delivered,
-        delivery_count = EXCLUDED.delivery_count,
-        updated_at = EXCLUDED.updated_at
-      RETURNING *
-    `;
-    
-    const params = [
-      row.id, row.user_id, row.alert_id, row.is_read, row.is_snoozed,
-      row.snooze_until, row.last_delivered, row.delivery_count, row.created_at, row.updated_at
-    ];
-    
-    try {
-      const result = await this.executeQuery(sql, params);
-      return this.mapResultsToEntities(result.rows)[0];
-    } catch (error) {
-      throw this.handleError('create', error);
-    }
-  }
-
-  async findById(id: string): Promise<UserAlertState | null> {
-    try {
-      const sql = `SELECT * FROM ${this.getTableName()} WHERE id = $1`;
-      const result = await this.executeQuery(sql, [id]);
-      const entities = this.mapResultsToEntities(result.rows);
-      return entities.length > 0 ? entities[0] : null;
-    } catch (error) {
-      throw this.handleError('findById', error);
-    }
+    const result = await this.bulkCreate([entity]);
+    return result[0];
   }
 
   async update(id: string, updates: Partial<UserAlertState>): Promise<UserAlertState> {
-    this.validateEntity(updates);
-    
-    const setClauses: string[] = [];
-    const params: any[] = [];
-    let paramIndex = 1;
-
-    // Map updates to database columns
-    const columnMappings: Record<string, string> = {
+    const updateMapping: { [key in keyof Partial<UserAlertState>]: string } = {
       isRead: 'is_read',
       isSnoozed: 'is_snoozed',
       snoozeUntil: 'snooze_until',
       lastDelivered: 'last_delivered',
-      deliveryCount: 'delivery_count'
+      deliveryCount: 'delivery_count',
     };
 
-    for (const [key, value] of Object.entries(updates)) {
-      if (value !== undefined && columnMappings[key]) {
-        setClauses.push(`${columnMappings[key]} = $${paramIndex}`);
-        params.push(value);
-        paramIndex++;
-      }
-    }
-
-    // Always update the updated_at timestamp
-    setClauses.push(`updated_at = $${paramIndex}`);
-    params.push(new Date());
-    paramIndex++;
-
-    if (setClauses.length === 1) { // Only updated_at was added
-      throw new Error('No valid fields to update');
-    }
-
-    params.push(id);
-    const sql = `
-      UPDATE ${this.getTableName()} 
-      SET ${setClauses.join(', ')} 
-      WHERE id = $${paramIndex} 
-      RETURNING *
-    `;
-
     try {
+      const setClauses: string[] = [];
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      for (const [key, column] of Object.entries(updateMapping)) {
+        if (updates.hasOwnProperty(key)) {
+          setClauses.push(`${column} = $${paramIndex}`);
+          params.push((updates as any)[key]);
+          paramIndex++;
+        }
+      }
+
+      if (setClauses.length === 0) {
+        throw new Error('No valid fields to update');
+      }
+
+      setClauses.push(`updated_at = $${paramIndex}`);
+      params.push(new Date());
+
+      params.push(id);
+      const sql = `
+        UPDATE ${this.getTableName()} 
+        SET ${setClauses.join(', ')} 
+        WHERE id = $${params.length} 
+        RETURNING *
+      `;
+
       const result = await this.executeQuery(sql, params);
       if (result.rows.length === 0) {
         throw new Error(`UserAlertState with ID ${id} not found`);
       }
       return this.mapResultsToEntities(result.rows)[0];
     } catch (error) {
+      if (error instanceof Error && (error.message === 'No valid fields to update' || error.message.startsWith('UserAlertState with ID'))) {
+        throw error;
+      }
       throw this.handleError('update', error);
-    }
-  }
-
-  async delete(id: string): Promise<boolean> {
-    try {
-      const sql = `DELETE FROM ${this.getTableName()} WHERE id = $1`;
-      const result = await this.executeQuery(sql, [id]);
-      return result.rowCount > 0;
-    } catch (error) {
-      throw this.handleError('delete', error);
     }
   }
 
@@ -296,7 +247,7 @@ export class UserAlertStateRepository extends BaseRepository<UserAlertState> imp
 
       const params = [isSnoozed, ...userIds, alertId];
       const result = await this.executeQuery(sql, params);
-      return result.rowCount;
+      return result.rowCount ?? 0;
     } catch (error) {
       throw this.handleError('bulkUpdateSnoozeStatus', error);
     }
@@ -314,7 +265,7 @@ export class UserAlertStateRepository extends BaseRepository<UserAlertState> imp
         AND snooze_until <= NOW()
       `;
       const result = await this.executeQuery(sql, []);
-      return result.rowCount;
+      return result.rowCount ?? 0;
     } catch (error) {
       throw this.handleError('resetExpiredSnoozes', error);
     }

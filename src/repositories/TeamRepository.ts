@@ -1,3 +1,4 @@
+
 import { TeamEntity } from '../entities/Team';
 import { BaseRepository } from './BaseRepository';
 
@@ -11,7 +12,7 @@ export class TeamRepository extends BaseRepository<TeamEntity> {
       id: row.id,
       name: row.name,
       organizationId: row.organization_id,
-      memberIds: JSON.parse(row.member_ids),
+      isActive: row.is_active,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at)
     }));
@@ -22,7 +23,7 @@ export class TeamRepository extends BaseRepository<TeamEntity> {
       id: entity.id,
       name: entity.name,
       organization_id: entity.organizationId,
-      member_ids: JSON.stringify(entity.memberIds),
+      is_active: entity.isActive,
       created_at: entity.createdAt,
       updated_at: entity.updatedAt
     };
@@ -32,11 +33,15 @@ export class TeamRepository extends BaseRepository<TeamEntity> {
     this.validateEntity(entity);
     const row = this.mapEntityToRow(entity);
     const sql = `
-      INSERT INTO ${this.getTableName()} (id, name, organization_id, member_ids, created_at, updated_at)
+      INSERT INTO ${this.getTableName()} 
+      (id, name, organization_id, is_active, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `;
-    const params = [row.id, row.name, row.organization_id, row.member_ids, row.created_at, row.updated_at];
+    const params = [
+      row.id, row.name, row.organization_id, 
+      row.is_active, row.created_at, row.updated_at
+    ];
 
     try {
       const result = await this.executeQuery(sql, params);
@@ -57,6 +62,16 @@ export class TeamRepository extends BaseRepository<TeamEntity> {
     }
   }
 
+  async findAllByIds(ids: string[]): Promise<TeamEntity[]> {
+    try {
+      const sql = `SELECT * FROM ${this.getTableName()} WHERE id = ANY($1)`;
+      const result = await this.executeQuery(sql, [ids]);
+      return this.mapResultsToEntities(result.rows);
+    } catch (error) {
+      throw this.handleError('findAllByIds', error);
+    }
+  }
+
   async update(id: string, updates: Partial<TeamEntity>): Promise<TeamEntity> {
     this.validateEntity(updates);
     const setClauses: string[] = [];
@@ -65,14 +80,14 @@ export class TeamRepository extends BaseRepository<TeamEntity> {
 
     const columnMappings: Record<string, string> = {
       name: 'name',
-      memberIds: 'member_ids',
+      isActive: 'is_active',
       updatedAt: 'updated_at'
     };
 
     for (const [key, value] of Object.entries(updates)) {
       if (value !== undefined && columnMappings[key]) {
         setClauses.push(`${columnMappings[key]} = $${paramIndex}`);
-        params.push(key === 'memberIds' ? JSON.stringify(value) : value);
+        params.push(value);
         paramIndex++;
       }
     }
@@ -104,20 +119,19 @@ export class TeamRepository extends BaseRepository<TeamEntity> {
     try {
       const sql = `DELETE FROM ${this.getTableName()} WHERE id = $1`;
       const result = await this.executeQuery(sql, [id]);
-      return result.rowCount > 0;
+      return (result.rowCount ?? 0) > 0;
     } catch (error) {
       throw this.handleError('delete', error);
     }
   }
-
-  public async findByName(name: string): Promise<TeamEntity | null> {
+  
+  async findByOrganizationId(organizationId: string): Promise<TeamEntity[]> {
     try {
-      const sql = `SELECT * FROM ${this.getTableName()} WHERE name = $1`;
-      const result = await this.executeQuery(sql, [name]);
-      const entities = this.mapResultsToEntities(result.rows);
-      return entities.length > 0 ? entities[0] : null;
+      const sql = `SELECT * FROM ${this.getTableName()} WHERE organization_id = $1`;
+      const result = await this.executeQuery(sql, [organizationId]);
+      return this.mapResultsToEntities(result.rows);
     } catch (error) {
-      throw this.handleError('findByName', error);
+      throw this.handleError('findByOrganizationId', error);
     }
   }
 }

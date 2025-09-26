@@ -115,13 +115,18 @@ describe('TeamEntity', () => {
 
         beforeEach(() => {
             team = new TeamEntity(validCreateRequest);
+            jest.useFakeTimers();
         });
 
-        it('should update name successfully', async () => {
+        afterEach(() => {
+            jest.useRealTimers();
+        });
+
+        it('should update name successfully', () => {
             const updateRequest: UpdateTeamRequest = { name: 'Updated Team Name' };
             const originalUpdatedAt = team.updatedAt;
 
-            await delay(1);
+            jest.advanceTimersByTime(1);
             team.update(updateRequest);
             expect(team.name).toBe('Updated Team Name');
             expect(team.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
@@ -174,13 +179,18 @@ describe('TeamEntity', () => {
                 organizationId: 'org-456',
                 memberIds: ['user-1', 'user-2']
             });
+            jest.useFakeTimers();
+        });
+
+        afterEach(() => {
+            jest.useRealTimers();
         });
 
         describe('addMember', () => {
-            it('should add new member successfully', async () => {
+            it('should add new member successfully', () => {
                 const originalUpdatedAt = team.updatedAt;
 
-                await delay(1);
+                jest.advanceTimersByTime(1);
                 team.addMember('user-3');
                 expect(team.memberIds).toContain('user-3');
                 expect(team.memberIds).toHaveLength(3);
@@ -203,10 +213,10 @@ describe('TeamEntity', () => {
         });
 
         describe('removeMember', () => {
-            it('should remove existing member successfully', async () => {
+            it('should remove existing member successfully', () => {
                 const originalUpdatedAt = team.updatedAt;
 
-                await delay(1);
+                jest.advanceTimersByTime(1);
                 team.removeMember('user-1');
                 expect(team.memberIds).not.toContain('user-1');
                 expect(team.memberIds).toEqual(['user-2']);
@@ -245,10 +255,10 @@ describe('TeamEntity', () => {
         });
 
         describe('clearMembers', () => {
-            it('should remove all members and update timestamp', async () => {
+            it('should remove all members and update timestamp', () => {
                 const originalUpdatedAt = team.updatedAt;
 
-                await delay(1);
+                jest.advanceTimersByTime(1);
                 team.clearMembers();
                 expect(team.memberIds).toEqual([]);
                 expect(team.getMemberCount()).toBe(0);

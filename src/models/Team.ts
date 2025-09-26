@@ -1,8 +1,9 @@
+
 export interface Team {
   id: string;
   name: string;
   organizationId: string;
-  memberIds: string[];
+  isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -10,10 +11,9 @@ export interface Team {
 export interface CreateTeamRequest {
   name: string;
   organizationId: string;
-  memberIds?: string[];
 }
 
 export interface UpdateTeamRequest {
   name?: string;
-  memberIds?: string[];
+  isActive?: boolean;
 }

@@ -61,13 +61,17 @@ export class UserAlertStateEntity implements IUserAlertState {
   }
 
   public markAsRead(): void {
-    this.isRead = true;
-    this.updatedAt = new Date();
+    if (!this.isRead) {
+      this.isRead = true;
+      this.updatedAt = new Date();
+    }
   }
 
   public markAsUnread(): void {
-    this.isRead = false;
-    this.updatedAt = new Date();
+    if (this.isRead) {
+      this.isRead = false;
+      this.updatedAt = new Date();
+    }
   }
 
   public snoozeForDay(): void {

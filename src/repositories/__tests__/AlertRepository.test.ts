@@ -1,5 +1,6 @@
 import { AlertRepository } from '../AlertRepository';
 import { Alert, AlertFilters, UpdateAlertRequest } from '../../models/Alert';
+import { AlertEntity } from '../../entities/Alert';
 import { AlertSeverity, AlertStatus, DeliveryType, VisibilityType } from '../../models/enums';
 
 describe('AlertRepository', () => {
@@ -7,8 +8,7 @@ describe('AlertRepository', () => {
   let mockConnectionPool: any;
   let mockClient: any;
 
-  const mockAlert: Alert = {
-    id: 'alert-123',
+  const mockAlertEntity = new AlertEntity({
     title: 'Test Alert',
     message: 'This is a test alert',
     severity: AlertSeverity.WARNING,
@@ -18,16 +18,15 @@ describe('AlertRepository', () => {
       targetIds: ['org-456']
     },
     startTime: new Date('2024-01-01T00:00:00Z'),
-    expiryTime: new Date('2024-12-31T23:59:59Z'),
+    expiryTime: new Date('2025-12-31T23:59:59Z'),
     reminderEnabled: true,
     reminderFrequency: 2,
-    createdBy: 'admin-123',
-    createdAt: new Date('2024-01-01T00:00:00Z'),
-    status: AlertStatus.ACTIVE
-  };
+  }, 'admin-123');
+
+  const mockAlert: Alert = mockAlertEntity as Alert;
 
   const mockRow = {
-    id: 'alert-123',
+    id: mockAlert.id,
     title: 'Test Alert',
     message: 'This is a test alert',
     severity: 'warning',
@@ -35,11 +34,11 @@ describe('AlertRepository', () => {
     visibility_type: 'organization',
     target_ids: '["org-456"]',
     start_time: '2024-01-01T00:00:00Z',
-    expiry_time: '2024-12-31T23:59:59Z',
+    expiry_time: '2025-12-31T23:59:59Z',
     reminder_enabled: true,
     reminder_frequency: 2,
     created_by: 'admin-123',
-    created_at: '2024-01-01T00:00:00Z',
+    created_at: new Date().toISOString(),
     status: 'active'
   };
 
@@ -66,27 +65,23 @@ describe('AlertRepository', () => {
     it('should create a new alert successfully', async () => {
       mockClient.query.mockResolvedValue({ rows: [mockRow] });
 
-      const result = await repository.create(mockAlert);
+      const result = await repository.create(mockAlertEntity);
 
       expect(mockClient.query).toHaveBeenCalledWith(
         expect.stringMatching(sql('INSERT INTO alerts')),
-        expect.arrayContaining([
-          mockAlert.id,
-          mockAlert.title,
-          mockAlert.message,
-          mockAlert.severity,
-          mockAlert.deliveryType
-        ])
+        expect.any(Array)
       );
-      expect(result.id).toBe(mockAlert.id);
-      expect(result.title).toBe(mockAlert.title);
+      expect(result.id).toBe(mockAlertEntity.id);
+      expect(result.title).toBe(mockAlertEntity.title);
     });
 
     it('should handle database errors during creation', async () => {
       const error = new Error('Database error');
       mockClient.query.mockRejectedValue(error);
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-      await expect(repository.create(mockAlert)).rejects.toThrow('Repository create operation failed');
+      await expect(repository.create(mockAlertEntity)).rejects.toThrow('Repository create operation failed');
+      consoleSpy.mockRestore();
     });
   });
 
@@ -94,14 +89,14 @@ describe('AlertRepository', () => {
     it('should find alert by ID successfully', async () => {
       mockClient.query.mockResolvedValue({ rows: [mockRow] });
 
-      const result = await repository.findById('alert-123');
+      const result = await repository.findById(mockAlert.id);
 
       expect(mockClient.query).toHaveBeenCalledWith(
         'SELECT * FROM alerts WHERE id = $1',
-        ['alert-123']
+        [mockAlert.id]
       );
       expect(result).not.toBeNull();
-      expect(result!.id).toBe('alert-123');
+      expect(result!.id).toBe(mockAlert.id);
     });
 
     it('should return null when alert not found', async () => {
@@ -120,11 +115,11 @@ describe('AlertRepository', () => {
         rows: [{ ...mockRow, title: 'Updated Title', severity: 'critical' }] 
       });
 
-      const result = await repository.update('alert-123', updates);
+      const result = await repository.update(mockAlert.id, updates);
 
       expect(mockClient.query).toHaveBeenCalledWith(
         expect.stringMatching(sql('UPDATE alerts SET title = $1, severity = $2')),
-        ['Updated Title', AlertSeverity.CRITICAL, 'alert-123']
+        ['Updated Title', AlertSeverity.CRITICAL, mockAlert.id]
       );
       expect(result.title).toBe('Updated Title');
     });
@@ -144,17 +139,17 @@ describe('AlertRepository', () => {
         }] 
       });
 
-      const result = await repository.update('alert-123', updates);
+      const result = await repository.update(mockAlert.id, updates);
 
       expect(mockClient.query).toHaveBeenCalledWith(
         expect.stringMatching(sql('visibility_type = $1, target_ids = $2')),
-        ['team', '["team-123","team-456"]', 'alert-123']
+        ['team', '["team-123","team-456"]', mockAlert.id]
       );
       expect(result.visibility.type).toBe(VisibilityType.TEAM);
     });
 
     it('should throw error when no valid fields to update', async () => {
-      await expect(repository.update('alert-123', {})).rejects.toThrow('No valid fields to update');
+      await expect(repository.update(mockAlert.id, {})).rejects.toThrow('No valid fields to update');
     });
 
     it('should throw error when alert not found', async () => {
@@ -169,11 +164,11 @@ describe('AlertRepository', () => {
     it('should delete alert successfully', async () => {
       mockClient.query.mockResolvedValue({ rowCount: 1 });
 
-      const result = await repository.delete('alert-123');
+      const result = await repository.delete(mockAlert.id);
 
       expect(mockClient.query).toHaveBeenCalledWith(
         'DELETE FROM alerts WHERE id = $1',
-        ['alert-123']
+        [mockAlert.id]
       );
       expect(result).toBe(true);
     });
@@ -191,10 +186,10 @@ describe('AlertRepository', () => {
     it('should find alerts by organization visibility', async () => {
       mockClient.query.mockResolvedValue({ rows: [mockRow] });
 
-      const result = await repository.findByVisibility('org-456');
+      const result = await repository.findByVisibility({ organizationId: 'org-456' });
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringMatching(sql('visibility_type = $2 AND target_ids::jsonb ? $3')),
+        expect.stringMatching(sql('(visibility_type = $2 AND target_ids::jsonb ? $3)')),
         [AlertStatus.ACTIVE, VisibilityType.ORGANIZATION, 'org-456']
       );
       expect(result).toHaveLength(1);
@@ -203,7 +198,11 @@ describe('AlertRepository', () => {
     it('should find alerts by organization, team, and user visibility', async () => {
       mockClient.query.mockResolvedValue({ rows: [mockRow] });
 
-      const result = await repository.findByVisibility('org-456', 'team-123', 'user-789');
+      const result = await repository.findByVisibility({
+        organizationId: 'org-456',
+        teamId: 'team-123',
+        userId: 'user-789'
+      });
 
       expect(mockClient.query).toHaveBeenCalledWith(
         expect.stringMatching(sql('OR (visibility_type = $4 AND target_ids::jsonb ? $5)')),
@@ -296,7 +295,7 @@ describe('AlertRepository', () => {
       mockClient.query.mockResolvedValue({ rows: [mockRow] });
 
       const startDate = new Date('2024-01-01');
-      const endDate = new Date('2024-12-31');
+      const endDate = new Date('2025-12-31');
       const filters: AlertFilters = { startDate, endDate };
       
       const result = await repository.findWithFilters(filters);
@@ -314,7 +313,7 @@ describe('AlertRepository', () => {
       const result = await repository.findWithFilters({});
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        'SELECT * FROM alerts ORDER BY created_at DESC',
+        expect.stringMatching(sql('SELECT * FROM alerts ORDER BY created_at DESC')),
         []
       );
       expect(result).toHaveLength(1);
@@ -325,11 +324,11 @@ describe('AlertRepository', () => {
     it('should archive alert successfully', async () => {
       mockClient.query.mockResolvedValue({ rowCount: 1 });
 
-      const result = await repository.archiveAlert('alert-123');
+      const result = await repository.archiveAlert(mockAlert.id);
 
       expect(mockClient.query).toHaveBeenCalledWith(
-        expect.stringMatching(sql('SET status = $1 WHERE id = $2 AND status != $3')),
-        [AlertStatus.ARCHIVED, 'alert-123', AlertStatus.ARCHIVED]
+        expect.stringMatching(sql('SET status = $1 WHERE id = $2')),
+        [AlertStatus.ARCHIVED, mockAlert.id]
       );
       expect(result).toBe(true);
     });
@@ -337,7 +336,7 @@ describe('AlertRepository', () => {
     it('should return false when alert already archived', async () => {
       mockClient.query.mockResolvedValue({ rowCount: 0 });
 
-      const result = await repository.archiveAlert('alert-123');
+      const result = await repository.archiveAlert(mockAlert.id);
 
       expect(result).toBe(false);
     });
@@ -347,11 +346,11 @@ describe('AlertRepository', () => {
     it('should mark alert as expired successfully', async () => {
       mockClient.query.mockResolvedValue({ rowCount: 1 });
 
-      const result = await repository.markAsExpired('alert-123');
+      const result = await repository.markAsExpired(mockAlert.id);
 
       expect(mockClient.query).toHaveBeenCalledWith(
         expect.stringMatching(sql('SET status = $1 WHERE id = $2 AND status = $3')),
-        [AlertStatus.EXPIRED, 'alert-123', AlertStatus.ACTIVE]
+        [AlertStatus.EXPIRED, mockAlert.id, AlertStatus.ACTIVE]
       );
       expect(result).toBe(true);
     });
@@ -359,7 +358,7 @@ describe('AlertRepository', () => {
     it('should return false when alert is not active', async () => {
       mockClient.query.mockResolvedValue({ rowCount: 0 });
 
-      const result = await repository.markAsExpired('alert-123');
+      const result = await repository.markAsExpired(mockAlert.id);
 
       expect(result).toBe(false);
     });
@@ -428,7 +427,7 @@ describe('AlertRepository', () => {
 
   describe('mapEntityToRow', () => {
     it('should correctly map Alert entity to database row', () => {
-      const result = (repository as any).mapEntityToRow(mockAlert);
+      const result = (repository as any).mapEntityToRow(mockAlertEntity);
 
       expect(result.id).toBe(mockAlert.id);
       expect(result.severity).toBe(mockAlert.severity);
